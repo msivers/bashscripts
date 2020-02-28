@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Takes piped json with non-password PFX cert and desired password and returns json with crt, key and password encoded pfx.
+# This was created because pfx certs stored in Azure Key Vault strips password, but SSL Cert for AGIC has to be in pfx and requires a password!
+
+eval "$(jq -r '@sh "export CERT=\(.cert), KEY=\(.key)"')"
+if [[ -z "${CERT}" ]]; then export CERT=none; fi
+if [[ -z "${KEY}" ]]; then export KEY=none; fi
+
+echo $CERT >> echo_cert.txt
+echo $KEY >> echo_key.txt
+
+echo $CERT | base64 -d > revplat_nopwd.pfx
+
+result1=$(openssl pkcs12 -in revplat_nopwd.pfx -passin "pass:" -clcerts -nokeys -out revplat.crt -passout "pass:$KEY" 2>&1)
+result2=$(openssl pkcs12 -in revplat_nopwd.pfx -passin "pass:" -nocerts -out revplat.key -passout "pass:$KEY" 2>&1)
+result3=$(openssl pkcs12 -export -out revplat.pfx -inkey revplat.key -in revplat.crt -passin "pass:$KEY" -passout "pass:$KEY" 2>&1)
+
+crt=$(jq -aRs . <<< cat revplat.crt)
+key=$(jq -aRs . <<< cat revplat.key)
+pfx=$(jq -aRs . <<< cat revplat.pfx)
+
+echo { \"crt\":$crt, \"key\":$key, \"pfx\":$pfx } | jq .
+
+# NOTE: The binary output $pfx is very slightly different to the revplat.pfx and seems to be corrupt. Probably an encoding issue.
+# The above script has some use ful references though. 1. how to pass json, 2. use of openssl and creating json output.
